@@ -45,3 +45,4 @@ EOF
 # Desktop Shortcut
 cp /opt/apps/com.eagleyun.yunshu/entries/applications/com.eagleyun.yunshu.desktop $HOME/Desktop/
 chmod +x $HOME/Desktop/com.eagleyun.yunshu.desktop
+cp $INST_SCRIPTS/yunshu/*.py /opt/apps/com.eagleyun.yunshu/files/ && chmod +x /opt/apps/com.eagleyun.yunshu/files/*.py
