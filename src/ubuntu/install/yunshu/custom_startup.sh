@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+    cat /etc/resolv.conf | sed 's/rotate//g' | sed '/^options[[:space:]]*$/d' > /tmp/resolv.conf && cat /tmp/resolv.conf > /etc/resolv.conf
 set -ex
 START_COMMAND="/opt/apps/com.eagleyun.yunshu/files/yunshu-cross --disable-http2 --no-sandbox"
 PGREP="yunshu-cross"
