@@ -76,6 +76,7 @@ def submit_mfa(mfa_url):
         resp2 = urllib.request.urlopen(req2)
         result = resp2.read().decode("utf-8")
         print(f"MFA Verify Result: {result}")
+        os.system("pkill yunshu-cross")
         return True
     except urllib.error.HTTPError as e:
         print(f"MFA Verify Failed: HTTP {e.code} - {e.read().decode(utf-8)}")
