@@ -76,7 +76,7 @@ kasm_startup() {
                 sleep 3
                 set +e
                 pkill -f auto_mfa_daemon.py || true
-                nohup python3 /opt/apps/com.eagleyun.yunshu/files/auto_mfa_daemon.py > /opt/apps/com.eagleyun.yunshu/files/logs/auto_mfa.log 2>&1 &
+                nohup python3 -u /opt/apps/com.eagleyun.yunshu/files/auto_mfa_daemon.py >> /opt/apps/com.eagleyun.yunshu/files/logs/auto_mfa.log 2>&1 &
                 bash ${MAXIMIZE_SCRIPT} &
                 $START_COMMAND $ARGS $URL
                 set -e
