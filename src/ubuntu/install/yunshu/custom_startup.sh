@@ -75,8 +75,8 @@ kasm_startup() {
                 echo "Socket found. Waiting 3 extra seconds for daemon to initialize..."
                 sleep 3
                 set +e
-                pkill -f auto_mfa_daemon.py || true
-                nohup python3 -u /opt/apps/com.eagleyun.yunshu/files/auto_mfa_daemon.py >> /opt/apps/com.eagleyun.yunshu/files/logs/auto_mfa.log 2>&1 &
+                pkill -f /opt/apps/com.eagleyun.yunshu/files/auto_mfa_daemon || true
+                nohup /opt/apps/com.eagleyun.yunshu/files/auto_mfa_daemon >> /opt/apps/com.eagleyun.yunshu/files/logs/auto_mfa.log 2>&1 &
                 bash ${MAXIMIZE_SCRIPT} &
                 $START_COMMAND $ARGS $URL
                 set -e

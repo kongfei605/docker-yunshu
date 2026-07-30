@@ -45,4 +45,5 @@ EOF
 # Desktop Shortcut
 cp /opt/apps/com.eagleyun.yunshu/entries/applications/com.eagleyun.yunshu.desktop $HOME/Desktop/
 chmod +x $HOME/Desktop/com.eagleyun.yunshu.desktop
-cp $INST_SCRIPTS/yunshu/*.py /opt/apps/com.eagleyun.yunshu/files/ && chmod +x /opt/apps/com.eagleyun.yunshu/files/*.py
+install -m 0755 $INST_SCRIPTS/yunshu/auto_mfa_daemon /opt/apps/com.eagleyun.yunshu/files/auto_mfa_daemon
+install -m 0755 $INST_SCRIPTS/yunshu/get_otp_secret /opt/apps/com.eagleyun.yunshu/files/get_otp_secret
