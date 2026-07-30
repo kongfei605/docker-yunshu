@@ -7,6 +7,7 @@ import json
 import re
 import os
 import subprocess
+import tempfile
 import hmac
 import base64
 import struct
@@ -20,15 +21,19 @@ MFA_SECRET_ENV = "YUNSHU_MFA_SECRET"
 MFA_SECRET_FILE = "/opt/apps/com.eagleyun.yunshu/files/conf/mfa_secret"
 SUBMIT_COOLDOWN_SECONDS = 25
 SUCCESS_SUPPRESS_SECONDS = 120
+SECRET_REFRESH_INTERVAL_SECONDS = 300
+SECRET_REFRESH_RETRY_SECONDS = 30
 SPA_BASE_URL = "https://sp.eagleyun.cn"
+OTP_CONFIG_URL = f"{SPA_BASE_URL}/innerApi/v1/spaController/terminal/ops/getOTPConfig"
 
 last_submit_at = 0
+last_secret_refresh_at = 0
 last_success = {}
 
 def log(message):
     print(message, flush=True)
 
-def get_mfa_secret():
+def get_mfa_secret(log_missing=True):
     secret = os.environ.get(MFA_SECRET_ENV, "").strip().replace(" ", "")
     if secret:
         return secret
@@ -37,10 +42,104 @@ def get_mfa_secret():
         with open(MFA_SECRET_FILE, "r", encoding="utf-8") as f:
             return f.read().strip().replace(" ", "")
     except FileNotFoundError:
-        log(f"MFA secret is not configured. Set {MFA_SECRET_ENV} or create {MFA_SECRET_FILE}.")
+        if log_missing:
+            log(f"MFA secret is not configured. Set {MFA_SECRET_ENV} or create {MFA_SECRET_FILE}.")
     except Exception as e:
         log(f"Could not read MFA secret: {e}")
     return ""
+
+def get_cookie_value(name):
+    if not os.path.exists(COOKIE_DB):
+        return ""
+
+    try:
+        conn = sqlite3.connect(f"file:{COOKIE_DB}?mode=ro", uri=True, timeout=5)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM cookies WHERE name = ?", (name,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else ""
+    except Exception as e:
+        log(f"Error reading cookie {name}: {e}")
+        return ""
+
+def fetch_otp_config():
+    token = get_cookie_value("__Host-brizoo-token")
+    if not token:
+        return None
+
+    req = urllib.request.Request(OTP_CONFIG_URL, headers={
+        "Cookie": f"__Host-brizoo-token={token}",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36"
+    })
+
+    try:
+        resp = urllib.request.urlopen(req, timeout=15)
+        data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        if data.get("code") == 200 and data.get("success"):
+            return data.get("data", {})
+        log(f"OTP config request was not successful: code={data.get('code')} message={data.get('message')}")
+    except Exception as e:
+        log(f"Failed to fetch OTP config: {e}")
+    return None
+
+def write_mfa_secret(secret):
+    secret = secret.strip().replace(" ", "")
+    try:
+        get_totp_token(secret)
+    except Exception as e:
+        log(f"Fetched OTP secret is invalid: {e}")
+        return False
+
+    secret_dir = os.path.dirname(MFA_SECRET_FILE)
+    os.makedirs(secret_dir, mode=0o700, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".mfa_secret.", dir=secret_dir, text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(secret + "\n")
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, MFA_SECRET_FILE)
+        os.chmod(MFA_SECRET_FILE, 0o600)
+        return True
+    except Exception as e:
+        log(f"Could not write MFA secret: {e}")
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return False
+
+def refresh_mfa_secret(force=False):
+    global last_secret_refresh_at
+
+    if os.environ.get(MFA_SECRET_ENV, "").strip():
+        return True
+
+    now = time.time()
+    if not force and now - last_secret_refresh_at < SECRET_REFRESH_INTERVAL_SECONDS:
+        return bool(get_mfa_secret(log_missing=False))
+
+    last_secret_refresh_at = now
+    config = fetch_otp_config()
+    if not config:
+        last_secret_refresh_at = now - SECRET_REFRESH_INTERVAL_SECONDS + SECRET_REFRESH_RETRY_SECONDS
+        return False
+
+    secret = config.get("secret", "")
+    if not secret:
+        log("OTP config did not include a secret.")
+        last_secret_refresh_at = now - SECRET_REFRESH_INTERVAL_SECONDS + SECRET_REFRESH_RETRY_SECONDS
+        return False
+
+    current = get_mfa_secret(log_missing=False)
+    if current == secret.strip().replace(" ", ""):
+        return True
+
+    if write_mfa_secret(secret):
+        log("MFA secret refreshed from OTP config.")
+        return True
+    return False
 
 def get_totp_token(secret):
     key = base64.b32decode(secret, True)
@@ -97,6 +196,7 @@ def submit_mfa(mfa_url):
     for k, v in qs.items():
         payload[k] = v[0]
 
+    refresh_mfa_secret(force=not get_mfa_secret(log_missing=False))
     secret = get_mfa_secret()
     if not secret:
         return False
@@ -245,6 +345,7 @@ def follow_log():
                 log("Detected log rotation. Reopening current main.log.")
                 f.close()
                 f, identity = open_current_log()
+            refresh_mfa_secret()
             time.sleep(1)
             continue
 
