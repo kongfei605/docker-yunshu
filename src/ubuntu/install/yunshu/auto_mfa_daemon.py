@@ -6,6 +6,7 @@ import urllib.parse
 import json
 import re
 import os
+import subprocess
 import hmac
 import base64
 import struct
@@ -13,6 +14,8 @@ import hashlib
 
 LOG_FILE = "/home/kasm-user/.config/YunshuCross/logs/main.log"
 COOKIE_DB = "/home/kasm-user/.config/YunshuCross/Cookies"
+CONFIG_FILE = "/home/kasm-user/.config/YunshuCross/config.json"
+YUNSHU_CLI = "/opt/apps/com.eagleyun.yunshu/files/bin/yunshu"
 SECRET = "24VA64YGXND26PULCUKGYY2BPFZJ3H6B"
 SUBMIT_COOLDOWN_SECONDS = 25
 SUCCESS_SUPPRESS_SECONDS = 120
@@ -101,7 +104,8 @@ def submit_mfa(mfa_url):
         try:
             parsed_result = json.loads(result)
             if parsed_result.get("is_success") is True:
-                report_mfa_success(parsed_result, cookie_str)
+                if report_mfa_success(parsed_result, cookie_str):
+                    connect_private_network()
                 last_success[mfa_url] = time.time()
         except json.JSONDecodeError:
             pass
@@ -139,6 +143,49 @@ def report_mfa_success(verify_result, cookie_str):
     except Exception as e:
         log(f"MFA Success Callback Failed: {e}")
         return False
+
+def auto_connect_enabled():
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return config.get("systemSetup", {}).get("autoConnect") is True
+    except Exception as e:
+        log(f"Could not read auto-connect setting: {e}")
+        return False
+
+def run_yunshu_cli(args):
+    try:
+        output = subprocess.check_output(
+            [YUNSHU_CLI, *args],
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=30,
+        )
+        return output.strip()
+    except subprocess.CalledProcessError as e:
+        output = e.output.strip() if e.output else ""
+        log(f"YunShu CLI failed ({' '.join(args)}): {output}")
+        return ""
+    except Exception as e:
+        log(f"YunShu CLI failed ({' '.join(args)}): {e}")
+        return ""
+
+def connect_private_network():
+    if not auto_connect_enabled():
+        log("Skipping private network connect because autoConnect is disabled.")
+        return False
+
+    status = run_yunshu_cli(["-i"])
+    if status:
+        log(f"YunShu Status: {status}")
+    if "内网已连接" in status:
+        log("Private network is already connected.")
+        return True
+
+    output = run_yunshu_cli(["-s", "pa"])
+    if output:
+        log(f"YunShu Connect Result: {output}")
+    return "内网已经连接成功" in output or "内网已连接" in output
 
 def open_current_log():
     while True:
