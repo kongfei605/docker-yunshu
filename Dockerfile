@@ -1,5 +1,13 @@
+ARG GO_BUILDER_IMAGE="golang:1.23-bookworm"
 ARG BASE_TAG="1.14.0"
 ARG BASE_IMAGE="core-ubuntu-focal"
+FROM ${GO_BUILDER_IMAGE} AS yunshu-go-builder
+WORKDIR /src/yunshu
+COPY ./src/ubuntu/install/yunshu/ ./
+RUN go mod download && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/auto_mfa_daemon ./cmd/auto_mfa_daemon && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/get_otp_secret ./cmd/get_otp_secret
+
 FROM hub.witd.in/kasmweb/$BASE_IMAGE:$BASE_TAG
 USER root
 
@@ -57,6 +65,7 @@ RUN ldd /opt/apps/com.eagleyun.yunshu/files/bin/yunshu-daemon && \
 
 # Install YunShu scripts
 COPY ./src/ubuntu/install/yunshu $INST_SCRIPTS/yunshu/
+COPY --from=yunshu-go-builder /out/auto_mfa_daemon /out/get_otp_secret $INST_SCRIPTS/yunshu/
 RUN bash $INST_SCRIPTS/yunshu/install_yunshu.sh  && rm -rf $INST_SCRIPTS/yunshu/
 
 COPY ./src/ubuntu/install/yunshu/custom_startup.sh $STARTUPDIR/custom_startup.sh
