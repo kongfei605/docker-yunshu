@@ -25,6 +25,7 @@ const (
 	successSuppress       = 120 * time.Second
 	secretRefreshInterval = 300 * time.Second
 	secretRefreshRetry    = 30 * time.Second
+	connectCheckInterval  = 60 * time.Second
 	verifyURL             = "https://idp.eagleyun.cn/innerApi/v1/idp/mfaAuth/verifyOTPCode"
 	mfaSuccessCallbackURL = yunshu.SPABaseURL + "/innerApi/v1/spaController/terminal/ops/mfaAuthSuccess"
 )
@@ -32,8 +33,10 @@ const (
 var (
 	lastSubmitAt        time.Time
 	lastSecretRefreshAt time.Time
+	lastConnectCheckAt  time.Time
 	lastSuccess         = map[string]time.Time{}
 	needMFARegexp       = regexp.MustCompile(`"is_need_mfa"\s*:\s*true`)
+	authedRegexp        = regexp.MustCompile(`"is_authed"\s*:\s*true`)
 	mfaURLRegexp        = regexp.MustCompile(`"mfa_url":"(https?://[^"]+)"`)
 )
 
@@ -302,6 +305,15 @@ func connectPrivateNetwork() bool {
 	return strings.Contains(output, "内网已经连接成功") || strings.Contains(output, "内网已连接")
 }
 
+func maybeConnectPrivateNetwork() {
+	now := time.Now()
+	if now.Sub(lastConnectCheckAt) < connectCheckInterval {
+		return
+	}
+	lastConnectCheckAt = now
+	connectPrivateNetwork()
+}
+
 func openCurrentLog() (*os.File, os.FileInfo) {
 	for {
 		file, err := os.Open(logFile)
@@ -370,7 +382,14 @@ func followLog() {
 }
 
 func handleLogLine(line string) {
-	if !strings.Contains(line, "heartbeat data:") || !needMFARegexp.MatchString(line) {
+	if !strings.Contains(line, "heartbeat data:") {
+		return
+	}
+
+	if !needMFARegexp.MatchString(line) {
+		if authedRegexp.MatchString(line) {
+			maybeConnectPrivateNetwork()
+		}
 		return
 	}
 
